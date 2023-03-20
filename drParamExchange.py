@@ -70,58 +70,97 @@ def main():
 class newParams:
     def __init__(self, tctDpage, kyoDpage, newFileName, TCTd, slots):
         TCTd = sorted(TCTd)
-        self.reTools = re.compile('^(?:(C\d\.\d+|\d\.\d+)|(F\d+)|(S\d+(?:\.?))|(B\d+)|(H\d+)|(Z\d?(?:\.|)\d+)|(w\d)){1,7}')
-        FaS = self.feedsNSpeeds(tctDpage, self.reTools, slots, TCTd)
+        self.reTools = re.compile('^(?:(C\d\.\d+|\d\.\d+)|(F\d+)|(S\d+(?:\.?))|(B\d+)|(H\d+)|(Z(?:-|)\d?(?:\.|)\d+)|(w\d)){1,7}')
+        tctFaS, slotFaS = self.newFeedsNSpeeds(tctDpage, self.reTools, slots)
+        FaS = self.feedsNSpeeds(tctFaS, slotFaS, self.reTools, TCTd)
         oldFaS = self.oldFeedsNSpeeds(kyoDpage, self.reTools)
         self.diamSwap(FaS, oldFaS)
         self.write2File(newFileName, oldFaS)
 
 
-    def feedsNSpeeds(self, tctDpage, reTools, slots, TCTd):
+
+    def newFeedsNSpeeds(self, tctDpage, reTools, slots):
+        '''
+        Creates two dictionaries. tctFaS for new drills and their parameters, and
+        slotFaS for new SLOT drills and their parameters.
+        Output:
+        tctFaS - dictionary {diameter: parameter line}
+        slotFaS - dictionary {slot diameter: parameter line}
+        Input:
+        tctDpage - txt file
+        reTools - regex compile
+        slots - txt file
+        '''
+        tctFaS = {}
+        slotFaS = {}
+        with open(tctDpage, 'r') as file:
+            for line in file:
+                try:
+                    diamGroup = reTools.search(line).group(1)
+                except AttributeError:
+                    continue
+                diamGroup = diamGroup[1:]
+                tctFaS.setdefault(diamGroup, {})
+                tctFaS[diamGroup] = str(line)
+
+        with open(slots, 'r') as sFile:
+            for line in sFile:
+                try:
+                    diamGroup = reTools.search(line).groups()
+                except AttributeError:
+                    continue
+                diam = diamGroup[0][1:]
+                slotFaS.setdefault(diam, {})
+                slotFaS[diam] = str(line)
+
+        return tctFaS, slotFaS
+
+
+
+    def feedsNSpeeds(self, tctFaS, slotFaS, reTools, TCTd):
+        '''
+        Creates a feeds and speeds dictionary of new drills (both new and slot).
+        To be inserted into the old parameter files.
+        Output:
+        FaS - dictionary {diameter: parameter line}
+        Input:
+        tctFaS - dictionary, from newFeedsNSpeeds
+        slotFaS - dictionary, from newFeedsNSpeeds
+        reTools - regex compile
+        TCTd - array, tools to be inserted into old parameter files
+        '''
         FaS = {}
         for line in TCTd:
             try:
                 tGroups = reTools.search(line).groups()
             except AttributeError:
                 continue
+            
             if tGroups[6] == None:
-                with open(tctDpage, 'r') as tctTXT:
-                    for i in tctTXT:
-                        try:
-                            tctGroups = reTools.search(i).groups()
-                        except AttributeError:
-                            continue
-                        if tGroups[0] == tctGroups[0][1:]:
-                            diam = tGroups[0]
-                            pmeter = i
-                            
-                            FaS.setdefault(diam, {})
-                            FaS[diam] = str(pmeter)
-                            break
-                        else:
-                            continue
+                diam = tGroups[0]
+                pmeter = tctFaS[tGroups[0]]
 
             elif tGroups[6] == 'w1':
-                with open(slots, 'r') as slotTXT:
-                    for i in slotTXT:
-                        try:
-                            tctGroups = reTools.search(i).groups()
-                        except AttributeError:
-                            continue
-                        if tGroups[0] == tctGroups[0][1:]:
-                            diam = tGroups[0] + tGroups[6]
-                            pmeter = i
-                            
-                            FaS.setdefault(diam, {})
-                            FaS[diam] = str(pmeter)
-                        else:
-                            continue
+                diam = tGroups[0] + tGroups[6]
+                pmeter = slotFaS[tGroups[0]]
+
+            FaS.setdefault(diam, {})
+            FaS[diam] = str(pmeter)
+
         return FaS
 
 
 
 
     def oldFeedsNSpeeds(self, kyoDpage, reTools):
+        '''
+        Creates a tool dictionary of old drills and their parameters.
+        Output:
+        oldFaS - dictionary {diameter: parameter line}
+        Input:
+        kyoDpage - txt file
+        reTools - regex compile
+        '''
         oldFaS = {}
         with open(kyoDpage, 'r') as kyoTXT:
             for line in kyoTXT:
@@ -145,17 +184,33 @@ class newParams:
 
 
     def diamSwap(self, FaS, oldFaS):
-        for diameter in oldFaS:
-            for i in FaS:
-                if diameter == i:
-                    oldFaS[diameter] = FaS[diameter]
-                    break
+        '''
+        Swaps parameter in the old feeds and speeds dictionary with
+        the parameters of the new feeds and speeds dictionary
+        output:
+        oldFaS - dictionary, {diameter: parameter line}
+        input:
+        FaS - dictionary, {diameter: parameter line}
+        oldFaS - dictionary, {diameter: parameter line}
+        '''
+        for diameter in FaS:
+            oldFaS[diameter] = FaS[diameter]
+
         return oldFaS
 
 
 
 
     def write2File(self, newFileName, oldFaS):
+        '''
+        Creates new txt file and writes eacg dictionary parameter line
+        to the file
+        Input:
+        newFileName - string, name of new file
+        oldFaS - dictionary, {diameter: parameter line}
+        Output:
+        None, but does create a txt file
+        '''
         with open(newFileName, 'w') as newFile:
             for line in oldFaS:
                 newFile.write(oldFaS[line])
@@ -171,3 +226,4 @@ class newParams:
 
 if __name__ == "__main__":
     main()
+
